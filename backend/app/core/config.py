@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     llm_provider: str = "openai"
     openai_api_key: str = ""
     anthropic_api_key: str = ""
+    anthropic_base_url: str = ""
     zhipuai_api_key: str = ""
 
     # Model

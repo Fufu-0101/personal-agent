@@ -21,11 +21,15 @@ class AgentService:
             self.zhipuai_client = ZhipuAI(api_key=settings.zhipuai_api_key)
             self.use_zhipuai = True
         elif settings.llm_provider == "anthropic":
-            self.llm = ChatAnthropic(
-                api_key=settings.anthropic_api_key,
-                model=settings.model_name,
-                temperature=0.7
-            )
+            # Use Anthropic-compatible API (including GLM-4.7 via Anthropic interface)
+            anthropic_kwargs = {
+                "api_key": settings.anthropic_api_key,
+                "model": settings.model_name,
+                "temperature": 0.7
+            }
+            if settings.anthropic_base_url:
+                anthropic_kwargs["base_url"] = settings.anthropic_base_url
+            self.llm = ChatAnthropic(**anthropic_kwargs)
             self.use_zhipuai = False
         else:
             self.llm = ChatOpenAI(
