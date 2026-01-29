@@ -46,7 +46,7 @@
 </template>
 
 <script setup>
-import { ref, nextTick, onMounted } from 'vue'
+import { ref, nextTick, onMounted, watch } from 'vue'
 import { chatAPI } from '../api/client'
 
 const messages = ref([])
