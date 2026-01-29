@@ -27,7 +27,7 @@ async def chat(request: ChatRequest):
 async def get_history(conversation_id: str):
     """Get conversation history."""
     try:
-        messages = agent_service.get_conversation_history(conversation_id)
+        messages = await agent_service.get_conversation_history(conversation_id)
 
         # Convert to simpler format
         history = []
