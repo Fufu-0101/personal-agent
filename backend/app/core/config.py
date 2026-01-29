@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     # Memory
     memory_db_path: str = "./data/memory.db"
 
+    # MongoDB
+    mongodb_connection_string: str = "mongodb://localhost:27017"
+    mongodb_database_name: str = "agent_memory"
+
     model_config = {"protected_namespaces": ()}
 
     @property
