@@ -4,13 +4,16 @@
 echo "🚀 Setting up Personal Agent in Codespaces..."
 echo ""
 
-# Step 1: Install MongoDB
-echo "📦 Installing MongoDB..."
-bash scripts/install-mongodb-codespaces.sh
+# Step 1: Setup MongoDB using Docker
+echo "📦 Setting up MongoDB..."
+bash scripts/install-mongodb-docker.sh
 
-echo ""
-echo "⏳ Waiting for MongoDB to be ready..."
-sleep 3
+if [ $? -ne 0 ]; then
+    echo ""
+    echo "⚠️  MongoDB Docker setup failed"
+    echo "Please use MongoDB Atlas instead (see MONGODB_SETUP.md)"
+    echo ""
+fi
 
 # Step 2: Update backend dependencies
 echo "📦 Installing Python dependencies..."
@@ -42,5 +45,8 @@ echo "   cd frontend"
 echo "   npm run dev"
 echo ""
 echo "3. Open the port 5173 link in Codespaces!"
+echo ""
+echo "💡 If MongoDB failed to start, use MongoDB Atlas:"
+echo "   See: MONGODB_SETUP.md"
 echo ""
 echo "🍵 Happy coding!"
