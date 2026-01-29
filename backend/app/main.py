@@ -1,9 +1,13 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+from dotenv import load_dotenv
 from app.core.config import settings
 from app.api.routes import router
 from app.services.agent import agent_service
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 @asynccontextmanager

@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     # Memory
     memory_db_path: str = "./data/memory.db"
 
+    model_config = {"protected_namespaces": ()}
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",")]
