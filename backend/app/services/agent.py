@@ -1,9 +1,5 @@
 """
-Simplified Hybrid Memory Architecture for Personal Agent
-Three-layer memory system:
-1. Short-term: Conversation context (in memory, via MemorySaver)
-2. Mid-term: MongoDB (persistent dialogue history, manual save)
-3. Long-term: MongoDB (important facts extraction)
+Hybrid Memory Architecture for Personal Agent with Memory Management
 """
 from typing import Sequence, Optional
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, ToolMessage
@@ -34,9 +30,9 @@ def calculate(expression: str) -> str:
         return f"计算错误: {str(e)}"
 
 
-# ============ MongoDB Memory Service ============
+# ============ Memory Service ============
 class MongoMemoryService:
-    """MongoDB-based memory service for mid-term and long-term memory"""
+    """MongoDB-based memory service with management capabilities"""
 
     def __init__(self, connection_string: str = "mongodb://localhost:27017"):
         self.client: Optional[AsyncIOMotorClient] = None
@@ -106,9 +102,9 @@ class MongoMemoryService:
     async def save_fact(
         self,
         thread_id: str,
-        fact_type: str,  # "preference", "name", "event", etc.
+        fact_type: str,
         content: str,
-        importance: float = 0.5  # 0.0 to 1.0
+        importance: float = 0.5
     ):
         """Save an important fact to long-term memory"""
         try:
@@ -146,6 +142,69 @@ class MongoMemoryService:
             print(f"Error getting facts: {e}")
             return []
 
+    async def delete_fact(
+        self,
+        thread_id: str,
+        content: str
+    ) -> bool:
+        """Delete a specific fact from long-term memory"""
+        try:
+            _, long_term = await self._get_collections()
+
+            result = await long_term.delete_many({
+                "thread_id": thread_id,
+                "content": {"$regex": content, "$options": "i"}
+            })
+
+            return result.deleted_count > 0
+        except Exception as e:
+            print(f"Error deleting fact: {e}")
+            return False
+
+    async def clear_all_facts(self, thread_id: str) -> int:
+        """Clear all facts for a thread"""
+        try:
+            _, long_term = await self._get_collections()
+
+            result = await long_term.delete_many({"thread_id": thread_id})
+            return result.deleted_count
+        except Exception as e:
+            print(f"Error clearing facts: {e}")
+            return 0
+
+    async def search_facts(
+        self,
+        thread_id: str,
+        keyword: str
+    ) -> list[dict]:
+        """Search facts by keyword"""
+        try:
+            _, long_term = await self._get_collections()
+
+            cursor = long_term.find({
+                "thread_id": thread_id,
+                "content": {"$regex": keyword, "$options": "i"}
+            })
+
+            docs = await cursor.to_list(length=None)
+            return docs
+        except Exception as e:
+            print(f"Error searching facts: {e}")
+            return []
+
+    async def list_all_facts(self, thread_id: str) -> list[dict]:
+        """List all facts with details"""
+        try:
+            _, long_term = await self._get_collections()
+
+            cursor = long_term.find({"thread_id": thread_id}).sort("importance", -1)
+            docs = await cursor.to_list(length=None)
+
+            return docs
+        except Exception as e:
+            print(f"Error listing facts: {e}")
+            return []
+
     async def close(self):
         """Close MongoDB connection"""
         if self.client:
@@ -168,16 +227,59 @@ class AgentService:
 
         self.llm = ChatAnthropic(**anthropic_kwargs)
 
-        # Define tools
+        # Store reference to memory service for tools
+        self.mongo_memory = MongoMemoryService(
+            connection_string=settings.mongodb_connection_string
+        )
+
+        # Define tools with memory management
+        async def forget_memory(query: str) -> str:
+            """删除记忆：告诉 AI 忘记某件事。例如：忘记我喜欢咖啡"""
+            try:
+                deleted = await self.mongo_memory.delete_fact(
+                    "default",
+                    query
+                )
+
+                if deleted:
+                    return f"✅ 已删除关于「{query}」的记忆"
+                else:
+                    return f"❌ 没有找到关于「{query}」的记忆"
+            except Exception as e:
+                return f"❌ 删除记忆时出错：{str(e)}"
+
+        async def list_memories() -> str:
+            """查看所有记忆"""
+            try:
+                facts = await self.mongo_memory.list_all_facts("default")
+
+                if not facts:
+                    return "📝 当前没有任何长期记忆"
+
+                result = "📝 我的记忆列表：\n\n"
+                for i, fact in enumerate(facts, 1):
+                    result += f"{i}. **{fact['fact_type']}** (重要性: {fact['importance']})\n"
+                    result += f"   {fact['content']}\n"
+                    result += f"   时间: {fact['timestamp'].strftime('%Y-%m-%d %H:%M')}\n\n"
+
+                return result.strip()
+            except Exception as e:
+                return f"❌ 查看记忆时出错：{str(e)}"
+
+        async def clear_all_memories() -> str:
+            """清空所有记忆（慎用）"""
+            try:
+                count = await self.mongo_memory.clear_all_facts("default")
+                return f"✅ 已清空 {count} 条记忆"
+            except Exception as e:
+                return f"❌ 清空记忆时出错：{str(e)}"
+
+        # Convert async functions to tools
+        # Note: LangGraph tools need to be sync, so we'll handle this differently
         self.tools = [get_current_time, calculate]
 
         # Layer 1: Short-term memory (in-memory checkpoint)
         self.checkpointer = MemorySaver()
-
-        # Layer 2 & 3: MongoDB (mid-term + long-term)
-        self.mongo_memory = MongoMemoryService(
-            connection_string="mongodb://localhost:27017"
-        )
 
         # Build LangGraph agent
         self.graph = create_react_agent(
@@ -195,6 +297,39 @@ class AgentService:
         config = {"configurable": {"thread_id": conversation_id or "default"}}
         thread_id = config["configurable"]["thread_id"]
 
+        # Check for memory management commands
+        message_lower = message.lower()
+
+        # Handle "忘记 X" command
+        if message_lower.startswith("忘记") or message_lower.startswith("删除记忆"):
+            query = message.replace("忘记", "").replace("删除记忆", "").strip()
+            deleted = await self.mongo_memory.delete_fact(thread_id, query)
+
+            if deleted:
+                return f"✅ 已删除关于「{query}」的记忆", thread_id
+            else:
+                return f"❌ 没有找到关于「{query}」的记忆", thread_id
+
+        # Handle "查看记忆" command
+        if "查看记忆" in message or "记忆列表" in message or "所有记忆" in message:
+            facts = await self.mongo_memory.list_all_facts(thread_id)
+
+            if not facts:
+                return "📝 当前没有任何长期记忆", thread_id
+
+            result = "📝 我的记忆列表：\n\n"
+            for i, fact in enumerate(facts, 1):
+                result += f"{i}. **{fact['fact_type']}**\n"
+                result += f"   {fact['content']}\n\n"
+
+            return result.strip(), thread_id
+
+        # Handle "清空记忆" command
+        if "清空记忆" in message or "删除所有记忆" in message:
+            count = await self.mongo_memory.clear_all_facts(thread_id)
+            return f"✅ 已清空 {count} 条记忆", thread_id
+
+        # Normal conversation
         # Retrieve long-term memory context
         facts = await self.mongo_memory.get_facts(thread_id)
 
